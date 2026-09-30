@@ -232,3 +232,10 @@ select.input--plain option { background: var(--ink-800); }
     .row__date { height: 52px; }
     .row__side { grid-column: 1 / -1; flex-direction: row; justify-content: space-between; align-items: center; }
 }
+
+
+/* ---------- Toast position inside dashboards ---------- */
+.page-dash .toasts { top: 16px; }
+@media (max-width: 900px) {
+    .page-dash .toasts { top: auto; bottom: 16px; }
+}
