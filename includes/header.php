@@ -3,7 +3,7 @@
 // Before including, a page may set:
 //   $page_title  (string)  text for the browser tab
 //   $body_class  (string)  extra classes for <body>
-//   $nav_active  (string)  'home' | 'doctors' | 'diseases' | 'research'
+//   $nav_active  (string)  'home' | 'doctors' | 'symptoms' | 'diseases' | 'research'
 //   $show_nav    (bool)    false hides the public navigation (used by admin login)
 $page_title = $page_title ?? 'CARE Group Medical Services';
 $body_class = $body_class ?? '';
@@ -30,6 +30,7 @@ function nav_link(string $key, string $href, string $label, string $active): str
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
     <link rel="stylesheet" href="<?php echo h(url('assets/css/theme.css')); ?>">
     <link rel="stylesheet" href="<?php echo h(url('assets/css/pages.css')); ?>">
+    <link rel="stylesheet" href="<?php echo h(url('assets/css/features.css')); ?>">
 </head>
 <body class="<?php echo h($body_class); ?> is-entering">
 
@@ -67,6 +68,7 @@ function nav_link(string $key, string $href, string $label, string $active): str
                 <?php
                 echo nav_link('home', 'index.php', 'Home', $nav_active);
                 echo nav_link('doctors', 'doctors.php', 'Find a doctor', $nav_active);
+                echo nav_link('symptoms', 'symptoms.php', 'Symptom checker', $nav_active);
                 echo nav_link('diseases', 'diseases.php', 'Health guide', $nav_active);
                 echo nav_link('research', 'news.php', 'Research', $nav_active);
                 ?>

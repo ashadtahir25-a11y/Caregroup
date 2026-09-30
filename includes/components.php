@@ -51,6 +51,41 @@ function avatar_hue(int $id): int
     return [168, 262, 200, 330, 40, 140][$id % 6];
 }
 
+// Average rating and review count for every doctor, loaded once per page.
+function doctor_ratings(): array
+{
+    static $cache = null;
+    global $pdo;
+    if ($cache === null) {
+        $cache = [];
+        try {
+            foreach ($pdo->query('SELECT doctor_id, AVG(rating) AS avg_rating, COUNT(*) AS total FROM reviews GROUP BY doctor_id') as $r) {
+                $cache[(int) $r['doctor_id']] = ['avg' => round((float) $r['avg_rating'], 1), 'total' => (int) $r['total']];
+            }
+        } catch (PDOException $e) {
+            error_log('Ratings unavailable (run database/update_part4.sql): ' . $e->getMessage());
+        }
+    }
+    return $cache;
+}
+
+// Five stars, filled to the rating (e.g. 4.5 shows four and a half)
+function stars(float $rating, string $extra = ''): string
+{
+    $pct = max(0, min(100, $rating / 5 * 100));
+    return '<span class="stars ' . $extra . '" style="--fill: ' . $pct . '%" role="img" aria-label="' . h($rating) . ' out of 5 stars"></span>';
+}
+
+// Small "4.5 (12 reviews)" line, or a "new doctor" note when there are no reviews yet
+function rating_line(int $doctorId): string
+{
+    $r = doctor_ratings()[$doctorId] ?? null;
+    if (!$r) {
+        return '<span class="rating rating--new">New doctor, no reviews yet</span>';
+    }
+    return '<span class="rating">' . stars($r['avg']) . ' <b>' . number_format($r['avg'], 1) . '</b> (' . $r['total'] . ' review' . ($r['total'] === 1 ? '' : 's') . ')</span>';
+}
+
 // One doctor card with 3D tilt.
 function doctor_card(array $doc): string
 {
@@ -65,10 +100,12 @@ function doctor_card(array $doc): string
         <div class="doc-card__top" data-depth>
             <span class="avatar" style="--hue: <?php echo avatar_hue((int) $doc['id']); ?>" aria-hidden="true"><?php echo h(initials($doc['name'])); ?></span>
             <div>
-                <h3 class="doc-card__name"><?php echo h(doctor_name($doc['name'])); ?></h3>
+                <h3 class="doc-card__name"><a href="<?php echo h(url('doctor.php?id=' . (int) $doc['id'])); ?>"><?php echo h(doctor_name($doc['name'])); ?></a></h3>
                 <p class="doc-card__spec"><i class="fa-solid <?php echo specialty_icon($doc['specialty']); ?>" aria-hidden="true"></i> <?php echo h($doc['specialty']); ?></p>
             </div>
         </div>
+
+        <?php echo rating_line((int) $doc['id']); ?>
 
         <dl class="doc-card__facts">
             <div><dt>Experience</dt><dd><?php echo (int) $doc['experience_years']; ?> yrs</dd></div>

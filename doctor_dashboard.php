@@ -18,7 +18,7 @@ if (!$doctor_id) {
 $doctor_id = (int) $doctor_id;
 
 $view = $_GET['view'] ?? 'home';
-if (!in_array($view, ['home', 'appointments', 'clinic'], true)) {
+if (!in_array($view, ['home', 'appointments', 'clinic', 'visit'], true)) {
     $view = 'home';
 }
 
@@ -56,6 +56,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash('success', $done[$to]);
         }
         redirect($return);
+    }
+
+    // ---- Complete a visit and write (or edit) the prescription ----
+    if ($action === 'visit') {
+        $id = (int) ($_POST['appointment_id'] ?? 0);
+        $back = 'doctor_dashboard.php?view=visit&id=' . $id;
+        $stmt = $pdo->prepare('SELECT status, appointment_date FROM appointments WHERE id = ? AND doctor_id = ?');
+        $stmt->execute([$id, $doctor_id]);
+        $app = $stmt->fetch();
+
+        if (!$app || !in_array($app['status'], ['Confirmed', 'Completed'], true) || $app['appointment_date'] > date('Y-m-d')) {
+            flash('error', 'A prescription can be written for a confirmed visit on or after its date.');
+            redirect('doctor_dashboard.php?view=appointments');
+        }
+
+        $rx = [
+            'diagnosis' => trim($_POST['diagnosis'] ?? ''),
+            'medicines' => trim($_POST['medicines'] ?? ''),
+            'advice'    => trim($_POST['advice'] ?? ''),
+            'follow_up' => trim($_POST['follow_up'] ?? ''),
+        ];
+        $e = [];
+        if (text_length($rx['diagnosis']) < 3) $e['diagnosis'] = 'Write the diagnosis.';
+        if (text_length($rx['medicines']) < 3) $e['medicines'] = 'List the medicines, one per line. Write "None" if no medicine is needed.';
+        if ($rx['follow_up'] !== '') {
+            $fu = DateTime::createFromFormat('!Y-m-d', $rx['follow_up']);
+            if (!$fu || $fu->format('Y-m-d') !== $rx['follow_up'] || $rx['follow_up'] <= $app['appointment_date']) {
+                $e['follow_up'] = 'Choose a follow-up date after this visit, or leave it empty.';
+            }
+        }
+        if ($e) {
+            $_SESSION['form_errors'] = $e;
+            $_SESSION['form_old'] = $rx;
+            flash('error', 'Fix the highlighted fields and save again.');
+            redirect($back);
+        }
+
+        $pdo->beginTransaction();
+        $pdo->prepare('INSERT INTO prescriptions (appointment_id, diagnosis, medicines, advice, follow_up) VALUES (?, ?, ?, ?, ?)
+                       ON DUPLICATE KEY UPDATE diagnosis = VALUES(diagnosis), medicines = VALUES(medicines), advice = VALUES(advice), follow_up = VALUES(follow_up)')
+            ->execute([$id, $rx['diagnosis'], $rx['medicines'], $rx['advice'], $rx['follow_up'] ?: null]);
+        $pdo->prepare("UPDATE appointments SET status = 'Completed' WHERE id = ? AND doctor_id = ?")->execute([$id, $doctor_id]);
+        $pdo->commit();
+
+        flash('success', $app['status'] === 'Completed' ? 'Prescription updated.' : 'Visit completed and prescription saved. The patient can now see and print it.');
+        redirect('doctor_dashboard.php?view=appointments&tab=completed');
     }
 
     // ---- Update clinic profile ----
@@ -124,8 +170,9 @@ $stmt = $pdo->prepare('SELECT d.*, c.name AS city_name FROM doctors d JOIN citie
 $stmt->execute([$doctor_id]);
 $me = $stmt->fetch();
 
-$appSql = 'SELECT a.*, p.name AS patient_name, p.phone AS patient_phone, p.email AS patient_email
+$appSql = 'SELECT a.*, p.name AS patient_name, p.phone AS patient_phone, p.email AS patient_email, rx.id AS rx_id
              FROM appointments a JOIN patients p ON p.id = a.patient_id
+             LEFT JOIN prescriptions rx ON rx.appointment_id = a.id
             WHERE a.doctor_id = ?';
 
 $stmt = $pdo->prepare('SELECT status, COUNT(*) AS n FROM appointments WHERE doctor_id = ? GROUP BY status');
@@ -138,8 +185,9 @@ function doctor_row(array $a, string $return): string
 {
     $actions = [];
     if (can_change_status('doctor', $a['status'], 'Confirmed')) $actions[] = ['Confirmed', 'Confirm', 'btn--glow', ''];
-    if (can_change_status('doctor', $a['status'], 'Completed') && $a['appointment_date'] <= date('Y-m-d')) $actions[] = ['Completed', 'Mark completed', 'btn--glow', ''];
     if (can_change_status('doctor', $a['status'], 'Cancelled')) $actions[] = ['Cancelled', $a['status'] === 'Pending' ? 'Decline' : 'Cancel', 'btn--ghost', 'Cancel this appointment? The patient will see it as cancelled.'];
+    // Completing a visit opens the prescription form instead of a one-click button
+    $canComplete = $a['status'] === 'Confirmed' && $a['appointment_date'] <= date('Y-m-d');
 
     ob_start(); ?>
     <article class="row glass" data-reveal>
@@ -156,8 +204,14 @@ function doctor_row(array $a, string $return): string
         </div>
         <div class="row__side">
             <?php echo status_badge($a['status']); ?>
-            <?php if ($actions): ?>
+            <?php if ($actions || $canComplete || $a['status'] === 'Completed'): ?>
                 <div class="row__actions">
+                    <?php if ($canComplete): ?>
+                        <a class="btn btn--glow btn--xs" href="doctor_dashboard.php?view=visit&amp;id=<?php echo (int) $a['id']; ?>"><i class="fa-solid fa-prescription" aria-hidden="true"></i> Complete visit</a>
+                    <?php elseif ($a['status'] === 'Completed'): ?>
+                        <a class="btn btn--ghost btn--xs" href="doctor_dashboard.php?view=visit&amp;id=<?php echo (int) $a['id']; ?>"><?php echo !empty($a['rx_id']) ? 'Edit prescription' : 'Write prescription'; ?></a>
+                        <a class="btn btn--ghost btn--xs" href="slip.php?id=<?php echo (int) $a['id']; ?>">Print</a>
+                    <?php endif; ?>
                     <?php foreach ($actions as [$to, $label, $cls, $confirm]): ?>
                         <form method="POST" action="doctor_dashboard.php"<?php echo $confirm ? ' data-confirm="' . h($confirm) . '"' : ''; ?>>
                             <?php echo csrf_field(); ?>
@@ -189,6 +243,12 @@ if ($view === 'home') {
     $stmt->execute([$doctor_id]);
     $week = (int) $stmt->fetchColumn();
 
+    // Latest patient reviews for this doctor
+    $stmt = $pdo->prepare('SELECT r.rating, r.comment, r.created_at, p.name AS patient_name FROM reviews r
+                             JOIN patients p ON p.id = r.patient_id WHERE r.doctor_id = ? ORDER BY r.created_at DESC LIMIT 3');
+    $stmt->execute([$doctor_id]);
+    $myReviews = $stmt->fetchAll();
+
     // Donut chart segments (conic-gradient percentages)
     $donut = [];
     $colors = ['Pending' => 'var(--amber)', 'Confirmed' => 'var(--pulse-2)', 'Completed' => 'var(--pulse)', 'Cancelled' => 'var(--vital)'];
@@ -216,6 +276,22 @@ if ($view === 'appointments') {
     $list = $stmt->fetchAll();
 }
 
+if ($view === 'visit') {
+    $vid = (int) ($_GET['id'] ?? 0);
+    $stmt = $pdo->prepare($appSql . ' AND a.id = ?');
+    $stmt->execute([$doctor_id, $vid]);
+    $visit = $stmt->fetch();
+    if (!$visit || !in_array($visit['status'], ['Confirmed', 'Completed'], true) || $visit['appointment_date'] > date('Y-m-d')) {
+        flash('error', 'A prescription can be written for a confirmed visit on or after its date.');
+        redirect('doctor_dashboard.php?view=appointments');
+    }
+    $stmt = $pdo->prepare('SELECT diagnosis, medicines, advice, follow_up FROM prescriptions WHERE appointment_id = ?');
+    $stmt->execute([$vid]);
+    $rxForm = $_SESSION['form_old'] ?? ($stmt->fetch() ?: ['diagnosis' => '', 'medicines' => '', 'advice' => '', 'follow_up' => '']);
+    $rxErrors = $_SESSION['form_errors'] ?? [];
+    unset($_SESSION['form_old'], $_SESSION['form_errors']);
+}
+
 if ($view === 'clinic') {
     $cities = $pdo->query('SELECT id, name FROM cities ORDER BY name')->fetchAll();
     // After a failed save, show what the doctor typed; otherwise the saved values
@@ -232,16 +308,22 @@ if ($view === 'clinic') {
     ];
 }
 
+function mb_strimwidth_safe(string $text, int $max): string
+{
+    if (text_length($text) <= $max) return $text;
+    return (function_exists('mb_substr') ? mb_substr($text, 0, $max - 1) : substr($text, 0, $max - 1)) . '…';
+}
+
 function err(array $errors, string $key): string
 {
     return isset($errors[$key]) ? '<p class="field__hint">' . h($errors[$key]) . '</p>' : '';
 }
 
-$titles = ['home' => 'Today', 'appointments' => 'Appointments', 'clinic' => 'Clinic profile'];
+$titles = ['home' => 'Today', 'appointments' => 'Appointments', 'clinic' => 'Clinic profile', 'visit' => 'Visit and prescription'];
 $page_title  = $titles[$view] . ' | CARE Group';
 $dash_title  = $view === 'home' ? 'Good ' . (date('H') < 12 ? 'morning' : (date('H') < 17 ? 'afternoon' : 'evening')) . ', ' . doctor_name($me['name']) : $titles[$view];
 $dash_sub    = $view === 'home' ? $me['specialty'] . ', ' . $me['city_name'] : '';
-$dash_active = $view;
+$dash_active = $view === 'visit' ? 'appointments' : $view;
 include 'includes/dash_header.php';
 ?>
 
@@ -281,6 +363,16 @@ include 'includes/dash_header.php';
                     <li><i style="background: <?php echo $col; ?>"></i><?php echo $st; ?><b><?php echo (int) ($counts[$st] ?? 0); ?></b></li>
                 <?php endforeach; ?>
             </ul>
+
+            <h2 class="chart-card__sub">Your rating</h2>
+            <?php echo rating_line($doctor_id); ?>
+            <?php foreach ($myReviews as $rv): ?>
+                <div class="review review--mini">
+                    <header><b><?php echo h(explode(' ', $rv['patient_name'])[0]); ?></b><?php echo stars((float) $rv['rating']); ?></header>
+                    <?php if (trim((string) $rv['comment']) !== ''): ?><p><?php echo h(mb_strimwidth_safe($rv['comment'], 90)); ?></p><?php endif; ?>
+                </div>
+            <?php endforeach; ?>
+            <a class="link-more" href="doctor.php?id=<?php echo $doctor_id; ?>">See your public profile</a>
         </aside>
     </div>
 
@@ -296,6 +388,51 @@ include 'includes/dash_header.php';
         <?php foreach ($list as $a) { echo doctor_row($a, 'doctor_dashboard.php?view=appointments&tab=' . $tab); } ?>
         <?php if (!$list): ?><div class="empty glass"><i class="fa-regular fa-calendar" aria-hidden="true"></i><p>Nothing in this list.</p></div><?php endif; ?>
     </div>
+
+<?php elseif ($view === 'visit'): ?>
+    <div class="visit-head glass">
+        <span class="avatar" style="--hue: <?php echo avatar_hue((int) $visit['patient_id'] + 3); ?>" aria-hidden="true"><?php echo h(initials($visit['patient_name'])); ?></span>
+        <div>
+            <b><?php echo h($visit['patient_name']); ?></b>
+            <span><?php echo h(friendly_date($visit['appointment_date'])); ?>, <?php echo h($visit['time_slot']); ?> &middot; <?php echo h($visit['patient_phone']); ?></span>
+        </div>
+        <?php echo status_badge($visit['status']); ?>
+    </div>
+    <?php if ($visit['notes'] !== null && $visit['notes'] !== ''): ?>
+        <p class="row__note">Patient's note: <?php echo h($visit['notes']); ?></p>
+    <?php endif; ?>
+
+    <form class="panel glass" method="POST" action="doctor_dashboard.php" data-loading novalidate>
+        <?php echo csrf_field(); ?>
+        <input type="hidden" name="action" value="visit">
+        <input type="hidden" name="appointment_id" value="<?php echo (int) $visit['id']; ?>">
+        <h2 class="panel__title"><span class="rx-mark">&#8478;</span> Prescription</h2>
+        <div class="form-stack">
+            <div class="field<?php echo isset($rxErrors['diagnosis']) ? ' field--error' : ''; ?>">
+                <label class="field__label" for="diagnosis">Diagnosis</label>
+                <textarea class="input input--plain" id="diagnosis" name="diagnosis" rows="2" placeholder="e.g. Contact dermatitis on both forearms"><?php echo h($rxForm['diagnosis']); ?></textarea>
+                <?php echo err($rxErrors, 'diagnosis'); ?>
+            </div>
+            <div class="field<?php echo isset($rxErrors['medicines']) ? ' field--error' : ''; ?>">
+                <label class="field__label" for="medicines">Medicines (one per line: name, dose, how often, how long)</label>
+                <textarea class="input input--plain" id="medicines" name="medicines" rows="5" placeholder="Cetirizine 10 mg, 1 tablet at night, 7 days&#10;Hydrocortisone 1% cream, twice a day, 5 days"><?php echo h($rxForm['medicines']); ?></textarea>
+                <?php echo err($rxErrors, 'medicines'); ?>
+            </div>
+            <div class="field">
+                <label class="field__label" for="advice">Advice (optional)</label>
+                <textarea class="input input--plain" id="advice" name="advice" rows="2" placeholder="e.g. Avoid scented soap. Drink plenty of water."><?php echo h($rxForm['advice']); ?></textarea>
+            </div>
+            <div class="field<?php echo isset($rxErrors['follow_up']) ? ' field--error' : ''; ?>">
+                <label class="field__label" for="follow_up">Follow-up date (optional)</label>
+                <input class="input input--plain" type="date" id="follow_up" name="follow_up" value="<?php echo h($rxForm['follow_up'] ?? ''); ?>" min="<?php echo h(date('Y-m-d', strtotime($visit['appointment_date'] . ' +1 day'))); ?>" style="color-scheme: dark; max-width: 260px">
+                <?php echo err($rxErrors, 'follow_up'); ?>
+            </div>
+        </div>
+        <div class="panel__foot">
+            <a class="btn btn--ghost" href="doctor_dashboard.php?view=appointments">Back</a>
+            <button type="submit" class="btn btn--glow"><i class="fa-solid fa-check" aria-hidden="true"></i> <?php echo $visit['status'] === 'Completed' ? 'Save prescription' : 'Complete visit'; ?></button>
+        </div>
+    </form>
 
 <?php else: ?>
     <form class="panel glass" method="POST" action="doctor_dashboard.php?view=clinic" data-loading novalidate>

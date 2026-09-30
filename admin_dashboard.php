@@ -240,11 +240,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         /* ---------------- Health guide ---------------- */
         case 'disease_save':
             $x = [];
-            foreach (['name', 'description', 'symptoms', 'preventions', 'cures'] as $k) {
+            foreach (['name', 'specialty', 'description', 'symptoms', 'preventions', 'cures'] as $k) {
                 $x[$k] = trim($_POST[$k] ?? '');
             }
             $e = [];
             if (text_length($x['name']) < 3 || text_length($x['name']) > 150) $e['name'] = 'Enter the condition name.';
+            if (text_length($x['specialty']) > 100) $e['specialty'] = 'Keep the specialty under 100 characters.';
             foreach (['description' => 'a short description', 'symptoms' => 'the symptoms', 'preventions' => 'prevention tips', 'cures' => 'the treatment'] as $k => $label) {
                 if (text_length($x[$k]) < 5) $e[$k] = 'Enter ' . $label . '.';
             }
@@ -252,9 +253,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 back_with_errors('admin_dashboard.php?view=diseases' . ($id ? '&edit=' . $id : '&add=1'), $e, $x);
             }
             if ($id) {
-                $pdo->prepare('UPDATE diseases SET name=?, description=?, symptoms=?, preventions=?, cures=? WHERE id=?')->execute(array_merge(array_values($x), [$id]));
+                $pdo->prepare('UPDATE diseases SET name=?, specialty=?, description=?, symptoms=?, preventions=?, cures=? WHERE id=?')->execute(array_merge(array_values($x), [$id]));
             } else {
-                $pdo->prepare('INSERT INTO diseases (name, description, symptoms, preventions, cures) VALUES (?,?,?,?,?)')->execute(array_values($x));
+                $pdo->prepare('INSERT INTO diseases (name, specialty, description, symptoms, preventions, cures) VALUES (?,?,?,?,?,?)')->execute(array_values($x));
             }
             flash('success', $x['name'] . ($id ? ' was updated.' : ' was added to the health guide.'));
             redirect('admin_dashboard.php?view=diseases');
@@ -439,7 +440,7 @@ switch ($view) {
             $stmt->execute([$edit]);
             if ($row = $stmt->fetch()) $form = $old ? array_merge($row, $old) : $row;
         } elseif ($adding) {
-            $form = $old ?: ['name' => '', 'description' => '', 'symptoms' => '', 'preventions' => '', 'cures' => ''];
+            $form = $old ?: ['name' => '', 'specialty' => '', 'description' => '', 'symptoms' => '', 'preventions' => '', 'cures' => ''];
         }
         break;
 

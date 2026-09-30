@@ -20,7 +20,7 @@ $patient_id = (int) $patient_id;
 
 // Old links used ?book_doc_id=ID without a view, so treat them as the booking view
 $view = $_GET['view'] ?? (isset($_GET['book_doc_id']) ? 'book' : 'home');
-if (!in_array($view, ['home', 'book', 'history'], true)) {
+if (!in_array($view, ['home', 'book', 'history', 'review'], true)) {
     $view = 'home';
 }
 
@@ -89,6 +89,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
+    // ---- Rate a completed visit ----
+    if ($action === 'review') {
+        $id      = (int) ($_POST['appointment_id'] ?? 0);
+        $rating  = (int) ($_POST['rating'] ?? 0);
+        $comment = trim($_POST['comment'] ?? '');
+
+        $stmt = $pdo->prepare("SELECT doctor_id FROM appointments WHERE id = ? AND patient_id = ? AND status = 'Completed'");
+        $stmt->execute([$id, $patient_id]);
+        $doctorId = (int) $stmt->fetchColumn();
+
+        if (!$doctorId) {
+            flash('error', 'You can rate a visit only after it is completed.');
+            redirect('patient_dashboard.php?view=history&tab=past');
+        }
+        if ($rating < 1 || $rating > 5) {
+            flash('error', 'Choose from 1 to 5 stars.');
+            redirect('patient_dashboard.php?view=review&id=' . $id);
+        }
+        if (text_length($comment) > 500) {
+            flash('error', 'Keep the comment under 500 characters.');
+            redirect('patient_dashboard.php?view=review&id=' . $id);
+        }
+        try {
+            $pdo->prepare('INSERT INTO reviews (appointment_id, doctor_id, patient_id, rating, comment) VALUES (?, ?, ?, ?, ?)')
+                ->execute([$id, $doctorId, $patient_id, $rating, $comment]);
+            flash('success', 'Thank you. Your review is now on the doctor\'s profile.');
+        } catch (PDOException $e) {
+            flash('error', $e->getCode() === '23000' ? 'You have already reviewed this visit.' : 'Your review could not be saved. Try again.');
+        }
+        redirect('patient_dashboard.php?view=history&tab=past');
+    }
+
     // ---- Cancel own appointment ----
     if ($action === 'cancel') {
         $id = (int) ($_POST['appointment_id'] ?? 0);
@@ -111,10 +143,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 /* =====================================================================
  * Data for the page
  * ===================================================================== */
-$appSql = 'SELECT a.*, d.name AS doctor_name, d.specialty, d.address AS clinic_address, d.phone AS clinic_phone, c.name AS city_name
+$appSql = 'SELECT a.*, d.name AS doctor_name, d.specialty, d.address AS clinic_address, d.phone AS clinic_phone, c.name AS city_name,
+                  rx.id AS rx_id, rv.rating AS my_rating
              FROM appointments a
              JOIN doctors d ON d.id = a.doctor_id
              JOIN cities c ON c.id = d.city_id
+             LEFT JOIN prescriptions rx ON rx.appointment_id = a.id
+             LEFT JOIN reviews rv ON rv.appointment_id = a.id
             WHERE a.patient_id = ?';
 
 $stmt = $pdo->prepare($appSql . " AND a.appointment_date >= CURDATE() AND a.status IN ('Pending','Confirmed') ORDER BY a.appointment_date, " . SLOT_ORDER_SQL);
@@ -143,6 +178,18 @@ function appointment_row(array $a, string $return): string
         </div>
         <div class="row__side">
             <?php echo status_badge($a['status']); ?>
+            <div class="row__actions">
+                <?php if ($a['status'] === 'Completed' && !empty($a['rx_id'])): ?>
+                    <a class="btn btn--glow btn--xs" href="slip.php?id=<?php echo (int) $a['id']; ?>"><i class="fa-solid fa-prescription" aria-hidden="true"></i> Prescription</a>
+                <?php elseif ($a['status'] !== 'Cancelled'): ?>
+                    <a class="btn btn--ghost btn--xs" href="slip.php?id=<?php echo (int) $a['id']; ?>"><i class="fa-solid fa-qrcode" aria-hidden="true"></i> Slip</a>
+                <?php endif; ?>
+                <?php if ($a['status'] === 'Completed' && empty($a['my_rating'])): ?>
+                    <a class="btn btn--ghost btn--xs" href="patient_dashboard.php?view=review&amp;id=<?php echo (int) $a['id']; ?>"><i class="fa-solid fa-star" aria-hidden="true"></i> Rate visit</a>
+                <?php elseif (!empty($a['my_rating'])): ?>
+                    <span class="my-rating">You rated <?php echo stars((float) $a['my_rating']); ?></span>
+                <?php endif; ?>
+            </div>
             <?php if ($canCancel): ?>
                 <form method="POST" action="patient_dashboard.php" data-confirm="Cancel this appointment? The slot will be released for other patients.">
                     <?php echo csrf_field(); ?>
@@ -232,16 +279,28 @@ if ($view === 'history') {
     $history = $stmt->fetchAll();
 }
 
+/* ---------- Review view data ---------- */
+$reviewApp = null;
+if ($view === 'review') {
+    $stmt = $pdo->prepare($appSql . " AND a.id = ? AND a.status = 'Completed'");
+    $stmt->execute([$patient_id, (int) ($_GET['id'] ?? 0)]);
+    $reviewApp = $stmt->fetch() ?: null;
+    if (!$reviewApp || !empty($reviewApp['my_rating'])) {
+        flash('error', $reviewApp ? 'You have already reviewed this visit.' : 'You can rate a visit only after it is completed.');
+        redirect('patient_dashboard.php?view=history&tab=past');
+    }
+}
+
 if (empty($_SESSION['display_name'])) {
     $stmt = $pdo->prepare('SELECT name FROM patients WHERE id = ?');
     $stmt->execute([$patient_id]);
     $_SESSION['display_name'] = $stmt->fetchColumn() ?: $_SESSION['username'];
 }
 
-$titles = ['home' => 'Overview', 'book' => 'Book an appointment', 'history' => 'My appointments'];
+$titles = ['home' => 'Overview', 'book' => 'Book an appointment', 'history' => 'My appointments', 'review' => 'Rate your visit'];
 $page_title  = $titles[$view] . ' | CARE Group';
 $dash_title  = $view === 'home' ? 'Hello, ' . explode(' ', $_SESSION['display_name'])[0] : $titles[$view];
-$dash_active = $view;
+$dash_active = $view === 'review' ? 'history' : $view;
 include 'includes/dash_header.php';
 ?>
 
@@ -405,6 +464,45 @@ include 'includes/dash_header.php';
             <?php endif; ?>
         </div>
     </div>
+
+<?php elseif ($view === 'review'): ?>
+    <!-- ================= RATE A VISIT ================= -->
+    <form class="panel glass review-form enter" method="POST" action="patient_dashboard.php" data-loading>
+        <?php echo csrf_field(); ?>
+        <input type="hidden" name="action" value="review">
+        <input type="hidden" name="appointment_id" value="<?php echo (int) $reviewApp['id']; ?>">
+        <div class="who">
+            <span class="avatar" style="--hue: <?php echo avatar_hue((int) $reviewApp['doctor_id']); ?>" aria-hidden="true"><?php echo h(initials($reviewApp['doctor_name'])); ?></span>
+            <div><b><?php echo h(doctor_name($reviewApp['doctor_name'])); ?></b><br><span class="muted"><?php echo h($reviewApp['specialty']); ?>, visit on <?php echo h(date('j M Y', strtotime($reviewApp['appointment_date']))); ?></span></div>
+        </div>
+
+        <h2 class="panel__title">How was your visit?</h2>
+        <fieldset class="star-pick" aria-label="Rating">
+            <?php for ($i = 5; $i >= 1; $i--): ?>
+                <input type="radio" id="star<?php echo $i; ?>" name="rating" value="<?php echo $i; ?>" required>
+                <label for="star<?php echo $i; ?>" title="<?php echo $i; ?> star<?php echo $i > 1 ? 's' : ''; ?>">&#9733;</label>
+            <?php endfor; ?>
+        </fieldset>
+        <p class="star-hint" data-star-hint>Tap a star to rate.</p>
+
+        <div class="field">
+            <label class="field__label" for="comment">Tell other patients about it (optional)</label>
+            <textarea class="input input--plain" id="comment" name="comment" rows="4" maxlength="500" placeholder="Was the doctor on time? Did they explain things clearly?"></textarea>
+            <p class="field__hint">Only your first name and last initial are shown with the review.</p>
+        </div>
+        <div class="panel__foot">
+            <a class="btn btn--ghost" href="patient_dashboard.php?view=history&amp;tab=past">Not now</a>
+            <button type="submit" class="btn btn--glow">Post review</button>
+        </div>
+    </form>
+    <script>
+    document.querySelectorAll('.star-pick input').forEach(function (r) {
+        r.addEventListener('change', function () {
+            var words = { 1: 'Poor', 2: 'Fair', 3: 'Good', 4: 'Very good', 5: 'Excellent' };
+            document.querySelector('[data-star-hint]').textContent = r.value + ' of 5: ' + words[r.value];
+        });
+    });
+    </script>
 
 <?php else: ?>
     <!-- ================= HISTORY ================= -->

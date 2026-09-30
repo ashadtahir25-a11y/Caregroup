@@ -10,6 +10,7 @@ $sort      = $_GET['sort'] ?? 'experience';
 
 $sortSql = [
     'experience' => 'd.experience_years DESC',
+    'rating'     => 'COALESCE(rv.avg_rating, 0) DESC, rv.total DESC, d.experience_years DESC',
     'fee_low'    => 'd.consultation_fee ASC',
     'fee_high'   => 'd.consultation_fee DESC',
     'name'       => 'd.name ASC',
@@ -23,7 +24,9 @@ try {
     $cities      = $pdo->query('SELECT id, name FROM cities ORDER BY name')->fetchAll();
     $specialties = $pdo->query("SELECT DISTINCT specialty FROM doctors WHERE specialty <> '' ORDER BY specialty")->fetchAll(PDO::FETCH_COLUMN);
 
-    $sql = 'SELECT d.*, c.name AS city_name FROM doctors d JOIN cities c ON c.id = d.city_id WHERE 1 = 1';
+    $sql = 'SELECT d.*, c.name AS city_name FROM doctors d JOIN cities c ON c.id = d.city_id
+            LEFT JOIN (SELECT doctor_id, AVG(rating) AS avg_rating, COUNT(*) AS total FROM reviews GROUP BY doctor_id) rv ON rv.doctor_id = d.id
+            WHERE 1 = 1';
     $params = [];
     if ($q !== '') {
         $sql .= ' AND (d.name LIKE ? OR d.specialty LIKE ? OR d.address LIKE ?)';
@@ -87,6 +90,7 @@ include 'includes/header.php';
             <span>Sort by</span>
             <select name="sort">
                 <option value="experience"<?php echo $sort === 'experience' ? ' selected' : ''; ?>>Most experienced</option>
+                <option value="rating"<?php echo $sort === 'rating' ? ' selected' : ''; ?>>Top rated</option>
                 <option value="fee_low"<?php echo $sort === 'fee_low' ? ' selected' : ''; ?>>Lowest fee</option>
                 <option value="fee_high"<?php echo $sort === 'fee_high' ? ' selected' : ''; ?>>Highest fee</option>
                 <option value="name"<?php echo $sort === 'name' ? ' selected' : ''; ?>>Name (A to Z)</option>

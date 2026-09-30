@@ -389,7 +389,8 @@ foreach ($cities as $c) {
             <a class="btn btn--ghost btn--sm" href="admin_dashboard.php?view=diseases">Close</a>
         </div>
         <div class="form-grid form-grid--3">
-            <?php echo f_input($errors, 'name', 'Condition name', $form['name'], 'text', '', 'span-3'); ?>
+            <?php echo f_input($errors, 'name', 'Condition name', $form['name'], 'text', '', 'span-2'); ?>
+            <?php echo f_input($errors, 'specialty', 'Specialist to see (for the symptom checker)', $form['specialty'] ?? '', 'text', 'placeholder="e.g. Cardiologist"'); ?>
             <?php echo f_textarea($errors, 'description', 'Short description', $form['description'], 2); ?>
             <?php echo f_textarea($errors, 'symptoms', 'Symptoms', $form['symptoms'], 3, '', 'Separate items with commas.'); ?>
             <?php echo f_textarea($errors, 'preventions', 'Prevention', $form['preventions'], 3, '', 'Separate items with commas.'); ?>
@@ -403,11 +404,12 @@ foreach ($cities as $c) {
     <a class="btn btn--glow btn--sm" href="admin_dashboard.php?view=diseases&amp;add=1"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add condition</a></div>
 <div class="table-wrap glass">
     <table class="table">
-        <thead><tr><th>Condition</th><th>Description</th><th class="table__actions">Actions</th></tr></thead>
+        <thead><tr><th>Condition</th><th>Specialist</th><th>Description</th><th class="table__actions">Actions</th></tr></thead>
         <tbody>
         <?php foreach ($diseases as $d): ?>
             <tr>
                 <td><b><?php echo h($d['name']); ?></b></td>
+                <td><?php echo h($d['specialty'] ?? '') ?: '<span class="muted">Not set</span>'; ?></td>
                 <td class="muted"><?php echo h($d['description']); ?></td>
                 <td class="table__actions">
                     <a class="btn btn--ghost btn--xs" href="admin_dashboard.php?view=diseases&amp;edit=<?php echo (int) $d['id']; ?>">Edit</a>
@@ -415,7 +417,7 @@ foreach ($cities as $c) {
                 </td>
             </tr>
         <?php endforeach; ?>
-        <?php if (!$diseases): ?><tr><td colspan="3" class="table__empty">The health guide is empty.</td></tr><?php endif; ?>
+        <?php if (!$diseases): ?><tr><td colspan="4" class="table__empty">The health guide is empty.</td></tr><?php endif; ?>
         </tbody>
     </table>
 </div>
