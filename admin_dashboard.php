@@ -66,6 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 flash('error', 'A visit can be marked completed on or after its date.');
             } else {
                 $pdo->prepare('UPDATE appointments SET status = ? WHERE id = ?')->execute([$to, $id]);
+                notify_appointment($pdo, $id, ['Confirmed' => 'confirmed', 'Cancelled' => 'cancelled_by_admin', 'Completed' => 'completed_by_admin'][$to]);
                 flash('success', 'Appointment marked as ' . strtolower($to) . '.');
             }
             redirect($return);

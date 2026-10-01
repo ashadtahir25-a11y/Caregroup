@@ -79,6 +79,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             $stmt = $pdo->prepare("INSERT INTO appointments (doctor_id, patient_id, appointment_date, time_slot, status, notes) VALUES (?, ?, ?, ?, 'Pending', ?)");
             $stmt->execute([$doctor_id, $patient_id, $date, $slot, $notes]);
+            notify_appointment($pdo, (int) $pdo->lastInsertId(), 'booked');
             flash('success', 'Appointment requested for ' . friendly_date($date) . ' at ' . $slot . '. The doctor will confirm it.');
             redirect('patient_dashboard.php?view=history');
         } catch (PDOException $e) {
@@ -114,6 +115,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             $pdo->prepare('INSERT INTO reviews (appointment_id, doctor_id, patient_id, rating, comment) VALUES (?, ?, ?, ?, ?)')
                 ->execute([$id, $doctorId, $patient_id, $rating, $comment]);
+            $stmt = $pdo->prepare('SELECT user_id FROM doctors WHERE id = ?');
+            $stmt->execute([$doctorId]);
+            notify($pdo, (int) $stmt->fetchColumn(), 'review', 'New review: ' . $rating . ' of 5 stars',
+                $comment !== '' ? substr($comment, 0, 120) : 'A patient rated their visit.', 'doctor.php?id=' . $doctorId);
             flash('success', 'Thank you. Your review is now on the doctor\'s profile.');
         } catch (PDOException $e) {
             flash('error', $e->getCode() === '23000' ? 'You have already reviewed this visit.' : 'Your review could not be saved. Try again.');
@@ -132,6 +137,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash('error', 'This appointment can no longer be cancelled.');
         } else {
             $pdo->prepare("UPDATE appointments SET status = 'Cancelled' WHERE id = ? AND patient_id = ?")->execute([$id, $patient_id]);
+            notify_appointment($pdo, $id, 'cancelled_by_patient');
             flash('success', 'Appointment cancelled.');
         }
         redirect('patient_dashboard.php?view=' . (($_POST['return'] ?? '') === 'home' ? 'home' : 'history'));
@@ -144,7 +150,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
  * Data for the page
  * ===================================================================== */
 $appSql = 'SELECT a.*, d.name AS doctor_name, d.specialty, d.address AS clinic_address, d.phone AS clinic_phone, c.name AS city_name,
-                  rx.id AS rx_id, rv.rating AS my_rating
+                  rx.id AS rx_id, rx.follow_up, rv.rating AS my_rating
              FROM appointments a
              JOIN doctors d ON d.id = a.doctor_id
              JOIN cities c ON c.id = d.city_id
@@ -183,6 +189,12 @@ function appointment_row(array $a, string $return): string
                     <a class="btn btn--glow btn--xs" href="slip.php?id=<?php echo (int) $a['id']; ?>"><i class="fa-solid fa-prescription" aria-hidden="true"></i> Prescription</a>
                 <?php elseif ($a['status'] !== 'Cancelled'): ?>
                     <a class="btn btn--ghost btn--xs" href="slip.php?id=<?php echo (int) $a['id']; ?>"><i class="fa-solid fa-qrcode" aria-hidden="true"></i> Slip</a>
+                <?php endif; ?>
+                <?php if ($canCancel && (int) $a['reschedule_count'] < 2 && strtotime($a['appointment_date'] . ' ' . $a['time_slot']) > time()): ?>
+                    <a class="btn btn--ghost btn--xs" href="reschedule.php?id=<?php echo (int) $a['id']; ?>"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Reschedule</a>
+                <?php endif; ?>
+                <?php if ($a['status'] === 'Completed' && !empty($a['follow_up']) && $a['follow_up'] >= date('Y-m-d')): ?>
+                    <a class="btn btn--glow btn--xs" href="patient_dashboard.php?view=book&amp;book_doc_id=<?php echo (int) $a['doctor_id']; ?>&amp;date=<?php echo h($a['follow_up']); ?>"><i class="fa-solid fa-calendar-plus" aria-hidden="true"></i> Book follow-up</a>
                 <?php endif; ?>
                 <?php if ($a['status'] === 'Completed' && empty($a['my_rating'])): ?>
                     <a class="btn btn--ghost btn--xs" href="patient_dashboard.php?view=review&amp;id=<?php echo (int) $a['id']; ?>"><i class="fa-solid fa-star" aria-hidden="true"></i> Rate visit</a>

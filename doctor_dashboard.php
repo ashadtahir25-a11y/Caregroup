@@ -52,6 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash('error', 'You can mark a visit as completed on or after its date.');
         } else {
             $pdo->prepare('UPDATE appointments SET status = ? WHERE id = ? AND doctor_id = ?')->execute([$to, $id, $doctor_id]);
+            notify_appointment($pdo, $id, $to === 'Confirmed' ? 'confirmed' : ($to === 'Cancelled' ? 'cancelled_by_doctor' : 'completed_by_admin'));
             $done = ['Confirmed' => 'Appointment confirmed.', 'Completed' => 'Visit marked as completed.', 'Cancelled' => 'Appointment cancelled.'];
             flash('success', $done[$to]);
         }
@@ -99,6 +100,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ->execute([$id, $rx['diagnosis'], $rx['medicines'], $rx['advice'], $rx['follow_up'] ?: null]);
         $pdo->prepare("UPDATE appointments SET status = 'Completed' WHERE id = ? AND doctor_id = ?")->execute([$id, $doctor_id]);
         $pdo->commit();
+        if ($app['status'] !== 'Completed') {
+            notify_appointment($pdo, $id, 'prescription');   // tell the patient only the first time
+        }
 
         flash('success', $app['status'] === 'Completed' ? 'Prescription updated.' : 'Visit completed and prescription saved. The patient can now see and print it.');
         redirect('doctor_dashboard.php?view=appointments&tab=completed');
@@ -245,7 +249,7 @@ if ($view === 'home') {
 
     // Latest patient reviews for this doctor
     $stmt = $pdo->prepare('SELECT r.rating, r.comment, r.created_at, p.name AS patient_name FROM reviews r
-                             JOIN patients p ON p.id = r.patient_id WHERE r.doctor_id = ? ORDER BY r.created_at DESC LIMIT 3');
+                             JOIN patients p ON p.id = r.patient_id WHERE r.doctor_id = ? AND r.is_hidden = 0 ORDER BY r.created_at DESC LIMIT 3');
     $stmt->execute([$doctor_id]);
     $myReviews = $stmt->fetchAll();
 

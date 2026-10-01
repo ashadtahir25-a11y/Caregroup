@@ -32,10 +32,33 @@ $menus = [
         ['cities',       'admin_dashboard.php?view=cities',       'fa-city',           'Cities'],
         ['diseases',     'admin_dashboard.php?view=diseases',     'fa-book-medical',   'Health guide'],
         ['news',         'admin_dashboard.php?view=news',         'fa-newspaper',      'Research'],
+        ['reviews',      'admin_reviews.php',                     'fa-star-half-stroke', 'Reviews'],
+        ['inbox',        'admin_inbox.php',                       'fa-inbox',          'Inbox'],
         ['account',      'account.php',                           'fa-user-gear',      'Account'],
     ],
 ];
 $menu = $menus[$role] ?? [];
+
+// Small red counters next to some menu items
+$menuBadges = [];
+if (isset($pdo)) {
+    try {
+        if ($role === 'admin') {
+            $menuBadges['inbox']        = (int) $pdo->query("SELECT COUNT(*) FROM contact_messages WHERE status = 'New'")->fetchColumn();
+            $menuBadges['appointments'] = (int) $pdo->query("SELECT COUNT(*) FROM appointments WHERE status = 'Pending'")->fetchColumn();
+        } elseif ($role === 'doctor' && !empty($_SESSION['doctor_id'])) {
+            $stmt = $pdo->prepare("SELECT COUNT(*) FROM appointments WHERE doctor_id = ? AND status = 'Pending'");
+            $stmt->execute([$_SESSION['doctor_id']]);
+            $menuBadges['appointments'] = (int) $stmt->fetchColumn();
+        }
+    } catch (PDOException $e) {
+        error_log('Menu badges failed: ' . $e->getMessage());
+    }
+}
+
+// Bell: unread count and the latest few notifications
+$bell = isset($pdo) ? notification_summary($pdo, (int) $_SESSION['user_id']) : ['unread' => 0, 'items' => []];
+$currentPage = basename($_SERVER['PHP_SELF']) . (empty($_SERVER['QUERY_STRING']) ? '' : '?' . $_SERVER['QUERY_STRING']);
 $roleLabel = ['patient' => 'Patient', 'doctor' => 'Doctor', 'admin' => 'Administrator'][$role] ?? '';
 // Show the person's real name in the sidebar (looked up once, then kept in the session)
 if (empty($_SESSION['display_name']) && isset($pdo)) {
@@ -78,6 +101,7 @@ include __DIR__ . '/header.php';
             <?php foreach ($menu as [$key, $href, $icon, $label]): ?>
                 <a href="<?php echo h(url($href)); ?>"<?php echo $key === $dash_active ? ' aria-current="page"' : ''; ?>>
                     <i class="fa-solid <?php echo $icon; ?>" aria-hidden="true"></i><span><?php echo h($label); ?></span>
+                    <?php if (!empty($menuBadges[$key])): ?><em class="side__badge"><?php echo $menuBadges[$key] > 99 ? '99+' : $menuBadges[$key]; ?></em><?php endif; ?>
                 </a>
             <?php endforeach; ?>
         </nav>
@@ -94,5 +118,45 @@ include __DIR__ . '/header.php';
                 <h1><?php echo h($dash_title ?? ''); ?></h1>
                 <?php if ($dash_sub !== ''): ?><p><?php echo h($dash_sub); ?></p><?php endif; ?>
             </div>
-            <p class="dash__date"><i class="fa-regular fa-calendar" aria-hidden="true"></i> <?php echo date('l, j F Y'); ?></p>
+            <div class="dash__tools">
+                <p class="dash__date"><i class="fa-regular fa-calendar" aria-hidden="true"></i> <?php echo date('l, j F Y'); ?></p>
+
+                <details class="bell" data-bell>
+                    <summary aria-label="Notifications, <?php echo $bell['unread']; ?> unread">
+                        <i class="fa-solid fa-bell" aria-hidden="true"></i>
+                        <?php if ($bell['unread']): ?><span class="bell__count"><?php echo $bell['unread'] > 9 ? '9+' : $bell['unread']; ?></span><?php endif; ?>
+                    </summary>
+                    <div class="bell__panel">
+                        <div class="bell__head">
+                            <b>Notifications</b>
+                            <?php if ($bell['unread']): ?>
+                                <form method="POST" action="<?php echo h(url('notifications.php')); ?>">
+                                    <?php echo csrf_field(); ?>
+                                    <input type="hidden" name="action" value="read_all">
+                                    <input type="hidden" name="return" value="<?php echo h($currentPage); ?>">
+                                    <button type="submit" class="bell__link">Mark all as read</button>
+                                </form>
+                            <?php endif; ?>
+                        </div>
+                        <?php foreach ($bell['items'] as $n): ?>
+                            <a class="bell__item<?php echo $n['is_read'] ? '' : ' is-unread'; ?>" href="<?php echo h(url('notifications.php?open=' . (int) $n['id'])); ?>">
+                                <i class="fa-solid <?php echo notification_icon($n['type']); ?>" aria-hidden="true"></i>
+                                <span><b><?php echo h($n['title']); ?></b><small><?php echo h($n['body']); ?></small></span>
+                                <time><?php echo h(time_ago($n['created_at'])); ?></time>
+                            </a>
+                        <?php endforeach; ?>
+                        <?php if (!$bell['items']): ?><p class="bell__empty">No notifications yet.</p><?php endif; ?>
+                        <a class="bell__all" href="<?php echo h(url('notifications.php')); ?>">See all notifications</a>
+                    </div>
+                </details>
+            </div>
         </header>
+        <script>
+        /* Close the bell panel when clicking outside it or pressing Escape */
+        (function () {
+            var bell = document.querySelector('[data-bell]');
+            if (!bell) return;
+            document.addEventListener('click', function (e) { if (bell.open && !bell.contains(e.target)) bell.open = false; });
+            document.addEventListener('keydown', function (e) { if (e.key === 'Escape') bell.open = false; });
+        })();
+        </script>

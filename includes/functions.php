@@ -195,3 +195,6 @@ function text_length(string $text): int
 {
     return function_exists('mb_strlen') ? mb_strlen($text, 'UTF-8') : (int) preg_match_all('/./us', $text);
 }
+
+// In-app notifications (Part 5)
+require_once __DIR__ . '/notify.php';

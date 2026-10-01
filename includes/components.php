@@ -59,7 +59,7 @@ function doctor_ratings(): array
     if ($cache === null) {
         $cache = [];
         try {
-            foreach ($pdo->query('SELECT doctor_id, AVG(rating) AS avg_rating, COUNT(*) AS total FROM reviews GROUP BY doctor_id') as $r) {
+            foreach ($pdo->query('SELECT doctor_id, AVG(rating) AS avg_rating, COUNT(*) AS total FROM reviews WHERE is_hidden = 0 GROUP BY doctor_id') as $r) {
                 $cache[(int) $r['doctor_id']] = ['avg' => round((float) $r['avg_rating'], 1), 'total' => (int) $r['total']];
             }
         } catch (PDOException $e) {

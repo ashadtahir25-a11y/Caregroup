@@ -16,11 +16,11 @@ if (!$doc) {
 // Reviews (patient names shortened to "Sana M." for privacy)
 $stmt = $pdo->prepare('SELECT r.rating, r.comment, r.created_at, p.name AS patient_name
                          FROM reviews r JOIN patients p ON p.id = r.patient_id
-                        WHERE r.doctor_id = ? ORDER BY r.created_at DESC LIMIT 20');
+                        WHERE r.doctor_id = ? AND r.is_hidden = 0 ORDER BY r.created_at DESC LIMIT 20');
 $stmt->execute([$id]);
 $reviews = $stmt->fetchAll();
 
-$stmt = $pdo->prepare('SELECT rating, COUNT(*) AS n FROM reviews WHERE doctor_id = ? GROUP BY rating');
+$stmt = $pdo->prepare('SELECT rating, COUNT(*) AS n FROM reviews WHERE doctor_id = ? AND is_hidden = 0 GROUP BY rating');
 $stmt->execute([$id]);
 $dist = array_column($stmt->fetchAll(), 'n', 'rating');
 $totalReviews = array_sum($dist);

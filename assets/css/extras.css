@@ -1,0 +1,93 @@
+/* ==========================================================================
+   CARE Group - Part 5: notifications bell, contact page, inbox, moderation
+   ========================================================================== */
+
+/* ---------- Dashboard header tools + bell ---------- */
+.dash__head { position: relative; z-index: 30; }   /* keeps the bell panel above the cards below */
+.dash__tools { display: flex; align-items: center; gap: 14px; }
+.bell { position: relative; }
+.bell summary {
+    list-style: none; cursor: pointer; position: relative; display: grid; place-items: center;
+    width: 46px; height: 46px; border-radius: 14px; color: var(--text);
+    background: var(--glass); border: 1px solid var(--glass-line); transition: border-color .2s, background .2s;
+}
+.bell summary::-webkit-details-marker { display: none; }
+.bell summary:hover, .bell[open] summary { border-color: var(--accent); background: var(--glass-strong); }
+.bell summary i { font-size: 1.05rem; }
+.bell__count {
+    position: absolute; top: -6px; right: -6px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px;
+    display: grid; place-items: center; font-size: .7rem; font-weight: 800; color: #fff;
+    background: var(--vital); box-shadow: 0 0 0 3px var(--ink-950), 0 0 14px var(--vital);
+    animation: bell-pop .5s var(--ease-out);
+}
+.bell__count + i, .bell summary:has(.bell__count) i { animation: bell-ring 2.4s ease-in-out 1s 2; transform-origin: top center; }
+@keyframes bell-pop { from { transform: scale(0); } }
+@keyframes bell-ring { 0%, 50%, 100% { transform: rotate(0); } 10%, 30% { transform: rotate(14deg); } 20%, 40% { transform: rotate(-14deg); } }
+.bell__panel {
+    position: absolute; right: 0; top: calc(100% + 10px); z-index: 60; width: min(380px, calc(100vw - 32px));
+    padding: 10px; border-radius: 20px; background: #0C1428;
+    border: 1px solid var(--glass-line); box-shadow: 0 30px 70px -20px rgba(0, 0, 0, .85);
+    animation: rise .3s var(--ease-out);
+}
+.bell__head { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px 10px; }
+.bell__link { background: none; border: 0; color: var(--accent); font: 700 .8rem var(--font-body); cursor: pointer; padding: 0; }
+.bell__item { display: grid; grid-template-columns: 30px 1fr auto; gap: 10px; align-items: start; padding: 10px; border-radius: 14px; color: var(--text); }
+.bell__item:hover { text-decoration: none; background: var(--glass); }
+.bell__item i { margin-top: 3px; color: var(--muted); text-align: center; }
+.bell__item b { display: block; font-size: .86rem; }
+.bell__item small { display: block; color: var(--muted); font-size: .78rem; line-height: 1.4; }
+.bell__item time { color: var(--faint); font-size: .72rem; white-space: nowrap; }
+.bell__item.is-unread { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.bell__item.is-unread i { color: var(--accent); }
+.bell__item.is-unread b::after { content: ''; display: inline-block; width: 7px; height: 7px; margin-left: 6px; border-radius: 50%; background: var(--accent); vertical-align: middle; box-shadow: 0 0 8px var(--accent); }
+.bell__empty { color: var(--muted); font-size: .88rem; padding: 14px 10px; margin: 0; }
+.bell__all { display: block; text-align: center; padding: 10px; margin-top: 4px; border-top: 1px solid var(--glass-line); font-weight: 700; font-size: .85rem; }
+
+.side__badge {
+    margin-left: auto; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 999px; display: grid; place-items: center;
+    font-style: normal; font-size: .72rem; font-weight: 800; color: #fff; background: var(--vital);
+}
+
+/* ---------- Notifications page ---------- */
+.tabs--flush { margin: 0; }
+.note-list { display: grid; gap: 10px; }
+.note { display: grid; grid-template-columns: 44px 1fr auto; gap: 14px; align-items: center; padding: 14px 18px; border-radius: 18px; color: var(--text); transition: border-color .2s, transform .25s var(--ease-out); }
+.note:hover { text-decoration: none; border-color: color-mix(in srgb, var(--accent) 50%, transparent); transform: translateX(4px); }
+.note__icon { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; color: var(--muted); background: rgba(4, 8, 20, .5); }
+.note__text b { display: block; }
+.note__text span { color: var(--muted); font-size: .9rem; }
+.note time { color: var(--faint); font-size: .8rem; font-weight: 600; }
+.note--unread { border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+.note--unread .note__icon { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); box-shadow: 0 0 20px -6px var(--accent); }
+
+/* ---------- Contact page ---------- */
+.hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+
+/* ---------- Admin inbox ---------- */
+.message { margin-bottom: 22px; }
+.message__body { padding: 18px 20px; border-radius: 16px; background: rgba(4, 8, 20, .45); border: 1px solid var(--glass-line); line-height: 1.7; white-space: normal; }
+.message__actions { justify-content: flex-start; margin-top: 16px; }
+.table tr.is-new td { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.table tr.is-new td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+
+/* ---------- Review moderation ---------- */
+.mod-list { display: grid; gap: 14px; }
+.mod { padding: 20px 22px; border-radius: 20px; }
+.mod__head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.mod__head time { margin-left: auto; color: var(--faint); font-size: .8rem; font-weight: 600; }
+.mod__text { margin: 10px 0 0; color: #C9D2EA; }
+.mod__reason { margin: 10px 0 0; color: var(--amber); font-weight: 700; font-size: .85rem; }
+.mod__actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 14px; }
+.mod__hide { display: flex; gap: 8px; align-items: center; }
+.mod__hide select { padding: 8px 12px; font-size: .82rem; width: auto; }
+.mod--hidden { opacity: .7; border-style: dashed; }
+
+/* ---------- Patient row extras ---------- */
+.followup { display: inline-flex; align-items: center; gap: 6px; font-size: .78rem; font-weight: 700; color: var(--pulse-2); }
+
+@media (max-width: 640px) {
+    .dash__tools { width: 100%; justify-content: space-between; }
+    .bell__panel { right: -8px; }
+    .note { grid-template-columns: 40px 1fr; }
+    .note time { grid-column: 2; }
+}

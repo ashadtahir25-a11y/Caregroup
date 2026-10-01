@@ -31,6 +31,7 @@ function nav_link(string $key, string $href, string $label, string $active): str
     <link rel="stylesheet" href="<?php echo h(url('assets/css/theme.css')); ?>">
     <link rel="stylesheet" href="<?php echo h(url('assets/css/pages.css')); ?>">
     <link rel="stylesheet" href="<?php echo h(url('assets/css/features.css')); ?>">
+    <link rel="stylesheet" href="<?php echo h(url('assets/css/extras.css')); ?>">
 </head>
 <body class="<?php echo h($body_class); ?> is-entering">
 
@@ -71,6 +72,7 @@ function nav_link(string $key, string $href, string $label, string $active): str
                 echo nav_link('symptoms', 'symptoms.php', 'Symptom checker', $nav_active);
                 echo nav_link('diseases', 'diseases.php', 'Health guide', $nav_active);
                 echo nav_link('research', 'news.php', 'Research', $nav_active);
+                echo nav_link('contact', 'contact.php', 'Contact', $nav_active);
                 ?>
                 <div class="nav__actions">
                     <?php if (isLoggedIn()): ?>

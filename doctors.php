@@ -25,7 +25,7 @@ try {
     $specialties = $pdo->query("SELECT DISTINCT specialty FROM doctors WHERE specialty <> '' ORDER BY specialty")->fetchAll(PDO::FETCH_COLUMN);
 
     $sql = 'SELECT d.*, c.name AS city_name FROM doctors d JOIN cities c ON c.id = d.city_id
-            LEFT JOIN (SELECT doctor_id, AVG(rating) AS avg_rating, COUNT(*) AS total FROM reviews GROUP BY doctor_id) rv ON rv.doctor_id = d.id
+            LEFT JOIN (SELECT doctor_id, AVG(rating) AS avg_rating, COUNT(*) AS total FROM reviews WHERE is_hidden = 0 GROUP BY doctor_id) rv ON rv.doctor_id = d.id
             WHERE 1 = 1';
     $params = [];
     if ($q !== '') {

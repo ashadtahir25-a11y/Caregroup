@@ -233,9 +233,29 @@ select.input--plain option { background: var(--ink-800); }
     .row__side { grid-column: 1 / -1; flex-direction: row; justify-content: space-between; align-items: center; }
 }
 
-
 /* ---------- Toast position inside dashboards ---------- */
 .page-dash .toasts { top: 16px; }
 @media (max-width: 900px) {
     .page-dash .toasts { top: auto; bottom: 16px; }
+}
+
+/* ---------- Fix: time and date boxes on appointment rows ----------
+   "02:00" in the wide display font did not fit the 64px box. */
+.row { grid-template-columns: 78px minmax(0, 1fr) auto; }
+.row__date { min-width: 0; padding: 0 4px; }
+.row__date b { font-size: 1rem; letter-spacing: -0.03em; white-space: nowrap; }
+.row__date span { white-space: nowrap; }
+
+/* ---------- Fix: review moderation controls wrap on small screens ---------- */
+.mod__hide { flex-wrap: wrap; min-width: 0; max-width: 100%; }
+.mod__hide select { flex: 1 1 200px; min-width: 0; max-width: 100%; }
+.mod__head, .mod__actions { min-width: 0; }
+
+@media (max-width: 640px) {
+    .row { grid-template-columns: 64px minmax(0, 1fr); gap: 12px; padding: 14px; }
+    .row__date { height: 56px; }
+    .row__date b { font-size: .85rem; }
+    .row__main p { overflow-wrap: anywhere; }
+    .row__actions { justify-content: flex-start; }
+    .mod__head time { margin-left: 0; width: 100%; }
 }
